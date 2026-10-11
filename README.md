@@ -23,53 +23,64 @@ The project explores operating-system concepts including process creation, inter
 
 ## Example Files and Results
 
-The [`images/`](images/) directory contains sample images used to demonstrate the filters. The examples below show the input and a corresponding filtered result. PNG copies are used in the README so GitHub can display the images inline.
+The [`images/`](images/) directory contains the original sample images and PNG previews of several filter pipelines. These previews let GitHub display the results directly in this README.
 
-### Sample image: `test.bmp`
+### Test image: multiple-filter pipeline
 
 <table>
   <tr>
     <th>Original</th>
-    <th>Grayscale + vignette + Gaussian blur</th>
+    <th>Pixelate + Gaussian blur + vignette + glitch + pixelate</th>
   </tr>
   <tr>
     <td><img src="images/test.png" alt="Original test image" width="420"></td>
-    <td><img src="images/test_grayscale_vignette20_gaussian_blur5.png" alt="Test image after grayscale, vignette, and Gaussian blur" width="420"></td>
+    <td><img src="images/test_pixelate30_gaussian_blur50_vignette80_glitch_effect10_pixelate10.png" alt="Test image processed with pixelation, Gaussian blur, vignette, glitch effect, and a second pixelation pass" width="420"></td>
   </tr>
 </table>
 
-Example command:
+Reproduce the filtered image with:
 
 ```bash
-./main images/test.bmp 3 grayscale vignette20 gaussian_blur5
+./main test.bmp 5 pixelate30 gaussian_blur50 vignette80 glitch_effect10 pixelate10
 ```
 
-The output filename follows the input name and filter sequence, producing `images/test_grayscale_vignette20_gaussian_blur5.bmp` when the input is `images/test.bmp`.
-
-### Larger image: `city.bmp` (4K)
-
-The larger city image demonstrates the same pipeline on a higher-resolution input, where processing more pixels makes the overhead and benefits of parallel execution easier to investigate.
+### City image: edge detection and glitch effect
 
 <table>
   <tr>
-    <th>Original 4K image</th>
-    <th>Grayscale + Gaussian blur + sharpen</th>
+    <th>Original city image</th>
+    <th>Edge detection + glitch effect</th>
   </tr>
   <tr>
-    <td><img src="images/city.png" alt="Original 4K city image" width="420"></td>
-    <td><img src="images/city_grayscale_gaussian_blur5_sharpen.png" alt="City image after grayscale, Gaussian blur, and sharpening" width="420"></td>
+    <td><img src="images/city.png" alt="Original city image" width="420"></td>
+    <td><img src="images/city_edge_detection_glitch_effect20.png" alt="City image processed with edge detection and a glitch effect at strength 20" width="420"></td>
   </tr>
 </table>
 
-Example command:
+Reproduce this result with:
 
 ```bash
-./main images/city.bmp 3 grayscale gaussian_blur5 sharpen
+./main city.bmp 2 edge_detection glitch_effect20
 ```
 
-This produces `images/city_grayscale_gaussian_blur5_sharpen.bmp`.
+### City image: grayscale, Gaussian blur, and sharpen
 
-> **Note:** The image links above assume the PNG previews use the shown filenames. If the files in `images/` have different names, update the four `src` paths to match the repository's actual filenames.
+<table>
+  <tr>
+    <th>Concurrent output</th>
+    <th>Sequential output</th>
+  </tr>
+  <tr>
+    <td><img src="images/city_grayscale_gaussian_blur40_sharpen.png" alt="City image processed with grayscale, Gaussian blur strength 40, and sharpening using the concurrent implementation" width="420"></td>
+    <td><img src="images/city_grayscale_gaussian_blur40_sharpen.bmp.sequential.png" alt="City image processed with grayscale, Gaussian blur strength 40, and sharpening using the sequential implementation" width="420"></td>
+  </tr>
+</table>
+
+The two outputs above use the same filter pipeline and provide a visual comparison of the sequential and process-based implementations. The corresponding command is:
+
+```bash
+./main city.bmp 3 grayscale gaussian_blur40 sharpen
+```
 
 ## Concurrency Demonstration
 
@@ -85,7 +96,7 @@ Because workers finish at different times, task-completion messages need not app
 For example, run a sample pipeline and inspect the worker/task messages:
 
 ```bash
-./main images/test.bmp 3 grayscale vignette20 gaussian_blur5
+./main test.bmp 3 grayscale vignette20 gaussian_blur5
 ```
 
 ## Performance Benchmarking
@@ -95,24 +106,42 @@ The program includes benchmark modes for comparing the sequential implementation
 ### Concurrent run
 
 ```bash
-BENCH_MODE=concurrent ./main images/city.bmp 3 grayscale gaussian_blur5 sharpen
+BENCH_MODE=concurrent ./main city.bmp 3 grayscale gaussian_blur40 sharpen
 ```
 
 ### Sequential run
 
 ```bash
-BENCH_MODE=sequential ./main images/city.bmp 3 grayscale gaussian_blur5 sharpen
+BENCH_MODE=sequential ./main city.bmp 3 grayscale gaussian_blur40 sharpen
 ```
 
 ### Run both and compare
 
 ```bash
-BENCH_MODE=both ./main images/city.bmp 3 grayscale gaussian_blur5 sharpen
+BENCH_MODE=both ./main city.bmp 3 grayscale gaussian_blur40 sharpen
 ```
 
-In `both` mode, the sequential and concurrent implementations process the same input with the same filter pipeline. The sequential result is written to a filename ending in `.sequential.bmp`, while the concurrent result is written to the normal output filename. The program reports the measured processing times and, when applicable, the speedup.
+In `both` mode, the sequential and concurrent implementations process the same input with the same filter pipeline. The sequential result is written to a filename ending in `.sequential.bmp`, while the concurrent result is written to the normal output filename. The program reports the measured processing times and speedup.
 
-Run benchmarks more than once and compare the results rather than relying on a single timing. Process creation, pipe setup, IPC, scheduling, and image size all affect the measured runtime. Small images may not benefit from parallel execution because process and communication overhead can outweigh the work saved; larger images are generally a more informative test of the parallel implementation. Timings depend on the machine and system load, so no fixed speedup is claimed here.
+### Recorded benchmark: five-filter test pipeline
+
+The following result was measured using `test.bmp` (640 × 426 pixels), 12 worker processes, and this pipeline: `pixelate30`, `gaussian_blur50`, `vignette80`, `glitch_effect10`, and `pixelate10`.
+
+```bash
+BENCH_MODE=both ./main test.bmp 5 pixelate30 gaussian_blur50 vignette80 glitch_effect10 pixelate10
+```
+
+| Metric | Measured result |
+|---|---:|
+| Sequential processing time | 2.817512 s |
+| Concurrent processing time | 0.245564 s |
+| Speedup | 11.474× |
+| Parallel efficiency (12 workers) | 95.61% |
+| Processing-time reduction | 91.3% |
+
+The concurrent run took about 8.7% of the sequential runtime for this particular workload. The corresponding filtered preview is [`images/test_pixelate30_gaussian_blur50_vignette80_glitch_effect10_pixelate10.png`](images/test_pixelate30_gaussian_blur50_vignette80_glitch_effect10_pixelate10.png).
+
+This is one measured run, not a universal performance guarantee. Run benchmarks more than once and compare results rather than relying on a single timing. Process creation, pipe setup, IPC, scheduling, image size, hardware, and system load all affect runtime. Small images may not benefit from parallel execution because process and communication overhead can outweigh the work saved; larger images are generally a more informative test of the parallel implementation.
 
 ## Tech Stack
 
@@ -195,7 +224,7 @@ Provide the input image, the number of filters, and the filters in the order the
 **Example:**
 
 ```bash
-./main images/test.bmp 3 vignette50 sharpen glitch_effect25
+./main test.bmp 3 vignette50 sharpen glitch_effect25
 ```
 
 This applies a vignette with strength 50, sharpens the result, and then applies a glitch effect with strength 25. The output filename reflects the input image and selected filter sequence:
@@ -207,7 +236,7 @@ test_vignette50_sharpen_glitch_effect25.bmp
 Another example:
 
 ```bash
-./main images/city.bmp 3 grayscale emboss glitch_effect50
+./main city.bmp 3 grayscale emboss glitch_effect50
 ```
 
 This converts the image to grayscale, applies embossing, and finishes with a glitch effect.
