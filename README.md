@@ -96,8 +96,22 @@ Because workers finish at different times, task-completion messages need not app
 For example, run a sample pipeline and inspect the worker/task messages:
 
 ```bash
-./main test.bmp 3 grayscale vignette20 gaussian_blur5
+BENCH_MODE=concurrent ./main test.bmp 5 pixelate30 gaussian_blur50 vignette80 glitch_effect10 pixelate10
 ```
+
+A shortened excerpt from a run illustrates workers being assigned new tasks while the parent collects completed results:
+
+```text
+Child 2 task 12: start=108, end=117
+Parent got task 5 from worker 5
+Copying output for task 5
+Child 5 task 13: start=117, end=126
+Parent got task 4 from worker 4
+Copying output for task 4
+Child 4 task 14: start=126, end=135
+```
+
+Here, each task processes a range of image rows. The parent does not need to collect results in task-ID order: it monitors worker pipes, copies each returned result into the correct output region, and dispatches more work as workers become available. The exact message order varies between runs because worker processes execute concurrently and are scheduled by the operating system.
 
 ## Performance Benchmarking
 
