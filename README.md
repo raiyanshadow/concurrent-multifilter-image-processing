@@ -4,22 +4,115 @@ A concurrent image-processing application written in C that applies customizable
 
 ## Overview
 
-The application divides an image into row-based tasks and distributes them across multiple worker processes. Each worker applies the requested filters to its assigned region and sends the processed pixels back to the parent process, which reconstructs the final image.
+The application divides an image into row-based tasks and distributes them across worker processes. Each worker applies the requested filters to its assigned region and sends the processed pixels back to the parent process, which reconstructs the final image.
 
-Rather than waiting for workers in a fixed order, the parent uses `select()` to monitor worker pipes and dispatch new tasks as workers finish. This allows faster workers to receive additional work without waiting for slower workers.
+Rather than waiting for workers in a fixed order, the parent uses `select()` to monitor worker pipes and dispatch new tasks as workers finish. This allows workers to receive more work as soon as they become available, while results can be collected in a different order from the order in which tasks were dispatched.
 
 The project explores operating-system concepts including process creation, inter-process communication (IPC), concurrent execution, file-descriptor management, and robust pipe I/O.
 
 ## Features
 
 - **10 image filters:** Grayscale, vignette, emboss, sharpen, glitch effect, Gaussian blur, pixelate, Laplacian edge detection, invert, and black and white.
-- **Customizable filter pipelines:** Apply multiple filters sequentially in a user-specified order, with configurable strengths for supported filters.
-- **Multiprocess parallelism:** Distribute image-processing tasks across 24 worker processes.
+- **Customizable filter pipelines:** Apply filters sequentially in a user-specified order, with configurable strengths for supported filters.
+- **Multiprocess parallelism:** Distribute image-processing tasks across a pool of worker processes.
 - **Dynamic task scheduling:** Use `select()` to monitor worker pipes and assign new tasks as workers become available.
 - **POSIX pipe communication:** Exchange task metadata and processed pixel buffers between the parent and worker processes.
 - **Boundary-correct filtering:** Use halo rows to preserve neighboring-pixel context when applying sequential filters to partitioned images.
-- **Robust I/O handling:** Implement `read_all()` and `write_all()` to handle partial reads and writes, alongside process cleanup and error checking.
+- **Robust I/O handling:** Use `read_all()` and `write_all()` to handle partial reads and writes, alongside process cleanup and error checking.
 - **BMP support:** Process 24-bit and 32-bit bitmap images while preserving the alpha channel for 32-bit images.
+
+## Example Files and Results
+
+The [`images/`](images/) directory contains sample images used to demonstrate the filters. The examples below show the input and a corresponding filtered result. PNG copies are used in the README so GitHub can display the images inline.
+
+### Sample image: `test.bmp`
+
+<table>
+  <tr>
+    <th>Original</th>
+    <th>Grayscale + vignette + Gaussian blur</th>
+  </tr>
+  <tr>
+    <td><img src="images/test.png" alt="Original test image" width="420"></td>
+    <td><img src="images/test_grayscale_vignette20_gaussian_blur5.png" alt="Test image after grayscale, vignette, and Gaussian blur" width="420"></td>
+  </tr>
+</table>
+
+Example command:
+
+```bash
+./main images/test.bmp 3 grayscale vignette20 gaussian_blur5
+```
+
+The output filename follows the input name and filter sequence, producing `images/test_grayscale_vignette20_gaussian_blur5.bmp` when the input is `images/test.bmp`.
+
+### Larger image: `city.bmp` (4K)
+
+The larger city image demonstrates the same pipeline on a higher-resolution input, where processing more pixels makes the overhead and benefits of parallel execution easier to investigate.
+
+<table>
+  <tr>
+    <th>Original 4K image</th>
+    <th>Grayscale + Gaussian blur + sharpen</th>
+  </tr>
+  <tr>
+    <td><img src="images/city.png" alt="Original 4K city image" width="420"></td>
+    <td><img src="images/city_grayscale_gaussian_blur5_sharpen.png" alt="City image after grayscale, Gaussian blur, and sharpening" width="420"></td>
+  </tr>
+</table>
+
+Example command:
+
+```bash
+./main images/city.bmp 3 grayscale gaussian_blur5 sharpen
+```
+
+This produces `images/city_grayscale_gaussian_blur5_sharpen.bmp`.
+
+> **Note:** The image links above assume the PNG previews use the shown filenames. If the files in `images/` have different names, update the four `src` paths to match the repository's actual filenames.
+
+## Concurrency Demonstration
+
+The application uses a worker pool and dynamic task assignment rather than assigning one fixed region to each worker for the entire run. The debug output makes this behavior observable:
+
+- `Child ... task ...` reports the row range assigned to a worker.
+- `Parent got task ... from worker ...` shows the parent receiving a completed task.
+- `Copying output for task ...` marks when the returned pixels are copied into the output image.
+- `Worker ... child finished` confirms that a worker process has been reaped.
+
+Because workers finish at different times, task-completion messages need not appear in task-ID order. When a worker completes a task, the parent can dispatch another task to it, keeping available workers occupied without blocking on one specific worker's result.
+
+For example, run a sample pipeline and inspect the worker/task messages:
+
+```bash
+./main images/test.bmp 3 grayscale vignette20 gaussian_blur5
+```
+
+## Performance Benchmarking
+
+The program includes benchmark modes for comparing the sequential implementation with the process-based concurrent implementation. Use the **same input image and filter sequence** for each run so that the timings are comparable.
+
+### Concurrent run
+
+```bash
+BENCH_MODE=concurrent ./main images/city.bmp 3 grayscale gaussian_blur5 sharpen
+```
+
+### Sequential run
+
+```bash
+BENCH_MODE=sequential ./main images/city.bmp 3 grayscale gaussian_blur5 sharpen
+```
+
+### Run both and compare
+
+```bash
+BENCH_MODE=both ./main images/city.bmp 3 grayscale gaussian_blur5 sharpen
+```
+
+In `both` mode, the sequential and concurrent implementations process the same input with the same filter pipeline. The sequential result is written to a filename ending in `.sequential.bmp`, while the concurrent result is written to the normal output filename. The program reports the measured processing times and, when applicable, the speedup.
+
+Run benchmarks more than once and compare the results rather than relying on a single timing. Process creation, pipe setup, IPC, scheduling, and image size all affect the measured runtime. Small images may not benefit from parallel execution because process and communication overhead can outweigh the work saved; larger images are generally a more informative test of the parallel implementation. Timings depend on the machine and system load, so no fixed speedup is claimed here.
 
 ## Tech Stack
 
@@ -102,7 +195,7 @@ Provide the input image, the number of filters, and the filters in the order the
 **Example:**
 
 ```bash
-./main test.bmp 3 vignette50 sharpen glitch_effect25
+./main images/test.bmp 3 vignette50 sharpen glitch_effect25
 ```
 
 This applies a vignette with strength 50, sharpens the result, and then applies a glitch effect with strength 25. The output filename reflects the input image and selected filter sequence:
@@ -114,7 +207,7 @@ test_vignette50_sharpen_glitch_effect25.bmp
 Another example:
 
 ```bash
-./main dog.bmp 3 grayscale emboss glitch_effect50
+./main images/city.bmp 3 grayscale emboss glitch_effect50
 ```
 
 This converts the image to grayscale, applies embossing, and finishes with a glitch effect.
